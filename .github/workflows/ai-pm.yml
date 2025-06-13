@@ -9,7 +9,7 @@ on:
       - 'requirements.md'
 
 permissions:
-  contents: read # requirements.md を読み込むため
+  contents: read
 
 jobs:
   generate_tasks_and_milestones:
@@ -31,13 +31,16 @@ jobs:
       - name: Install GitHub CLI # ★このステップを修正★
         run: |
           # GitHub CLI を手動でインストールするコマンド
-          # 最新の安定版をインストール
-          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
-          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+          # 最新の安定版を確実にインストールするため、ppa を追加してインストール
+          sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-key C99B11DEB97541F0 # 新しいリポジトリキー
+          sudo apt-add-repository https://cli.github.com/packages # gh CLI のPPAを追加
           sudo apt update
           sudo apt install gh -y
+
+          # インストールされたgh CLIのバージョンを確認（デバッグ用）
+          gh --version
         env:
-          GITHUB_TOKEN: ${{ secrets.GH_PAT_FOR_PM }} # gh CLI の認証用トークン (インストール後も設定される)
+          GITHUB_TOKEN: ${{ secrets.GH_PAT_FOR_PM }}
 
       - name: Run AI-powered Project Item Generator
         env:
@@ -46,6 +49,6 @@ jobs:
           GITHUB_ORG_NAME: ${{ github.repository_owner }}
           FRONTEND_REPO_NAME: "GITRIS-frontend"
           BACKEND_REPO_NAME: "GITRIS-backend"
-          GITHUB_PROJECT_NAME: "GITRIS"
+          GITHUB_PROJECT_NAME: "GITRIS Development Board"
         run: |
           python scripts/generate_project_items.py requirements.md

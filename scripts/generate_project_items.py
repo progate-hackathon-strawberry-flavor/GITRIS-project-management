@@ -308,13 +308,13 @@ def main():
         sys.exit(1)
 
     # 2. LLMへのプロンプト作成
-    prompt = f"""
+        prompt = f"""
     以下の要件定義ドキュメントから、主要なマイルストーン（目標）と、それに付随する詳細なタスク（Issue）をJSON形式で抽出してください。
 
     - **マイルストーン**は以下のフィールドを持つものとします。
       - `name`: マイルストーンのタイトル (文字列, 必須)
       - `description`: マイルストーンの説明 (文字列, オプション)
-      - `target_repositories`: このマイルストーンが関連するリポジトリのリスト (例: `["frontend", "backend"]`)
+      - `target_repositories`: このマイルストーンが関連するリポジトリのリスト (例: `["frontend", "backend"]`, **必ず1つ以上のリポジトリを含めてください**)
       - `due_on`: マイルストーンの期限 (YYYY-MM-DD形式の文字列, オプション)
 
     - **タスク**は以下のフィールドを持つものとします。
@@ -333,7 +333,7 @@ def main():
         {{
           "name": "GitHub OAuth 実装完了",
           "description": "ユーザーがGitHubアカウントでログインし、Supabaseと連携できる状態",
-          "target_repositories": ["frontend", "backend"],
+          "target_repositories": ["frontend", "backend"], // ここにリポジトリが入るように強調
           "due_on": "{datetime.now().strftime('%Y-%m-%d')}"
         }}
       ],
@@ -377,7 +377,6 @@ def main():
       ]
     }}
     ```
-
     **要件定義ドキュメント:**
     {requirements_content}
     """

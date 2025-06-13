@@ -3,7 +3,7 @@ import os
 import json
 import sys
 import requests
-from github import Github, GithubException, GithubObject # ★ GithubObject をインポート ★
+from github import Github, GithubException, GithubObject 
 import subprocess
 from datetime import datetime, timedelta
 
@@ -201,12 +201,14 @@ def add_issue_to_github_project(org_name: str, project_name: str, issue_number: 
     """
     print(f"Adding issue #{issue_number} from {repo_full_name} to GitHub Project '{project_name}'...")
     try:
-        # gh CLI がインストールされ、認証されている前提
+        # gh CLI の `project item add` コマンドを使用
+        # プロジェクトを特定するために `--owner` とプロジェクト名を指定
+        # Issueを特定するために --issue と issue_number を指定
         cmd = [
-            'gh', 'issue', 'add', str(issue_number),
-            '--project', project_name,
-            '--repo', repo_full_name,
-            '--org', org_name # Organizationレベルのプロジェクトを指定するために必要
+            'gh', 'project', 'item', 'add', project_name, # プロジェクト名を直接渡す
+            '--owner', org_name, # Organizationレベルのプロジェクトのオーナー (Organization名)
+            '--issue', str(issue_number),
+            '--repo', repo_full_name # Issueが属するリポジトリのフルネーム
         ]
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
         print(f"gh CLI stdout: {result.stdout}")

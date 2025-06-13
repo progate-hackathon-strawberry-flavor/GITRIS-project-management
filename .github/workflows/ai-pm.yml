@@ -48,9 +48,14 @@ jobs:
           BACKEND_REPO_NAME: "GITRIS-backend"
           GITHUB_PROJECT_NAME: "GITRIS Development Board"
         run: |
-          # 明示的にgh CLIにログインする
-          echo "$GITHUB_TOKEN" | gh auth login --with-token
-          gh auth status # ログイン状態を確認（デバッグ用。成功していれば'Logged in to github.com'と表示）
+          # gh CLI に明示的にログインする
+          # GITHUB_TOKEN環境変数があれば自動的に認証されますが、
+          # 環境によっては明示的なログインが必要な場合があるため再追加します。
+          # 警告で終了コード1が返されるのを防ぐため || true を追加。
+          echo "$GITHUB_TOKEN" | gh auth login --with-token || true
+          
+          # ログイン状態を確認（デバッグ用。成功していれば'Logged in to github.com'と表示）
+          gh auth status 
 
           # その後、Pythonスクリプトを実行
           python scripts/generate_project_items.py requirements.md

@@ -3,7 +3,7 @@ import os
 import json
 import sys
 import requests
-from github import Github, GithubException
+from github import Github, GithubException, GithubObject # ★ GithubObject をインポート ★
 import subprocess
 from datetime import datetime, timedelta
 
@@ -171,20 +171,23 @@ def create_github_issue(repo, issue_data: dict, milestone_id: int):
 
     print(f"Creating issue '{title}' in {repo.full_name}...")
     
-    # Issue作成時にマイルストーンオブジェクトを渡す
-    milestone_obj_for_creation = None
+    # Issue作成時に渡すマイルストーンオブジェクトを決定
+    # ここが今回の修正の核心: milestone_id がNoneの場合、GithubObject.NotSet を渡す
+    milestone_obj_for_creation = GithubObject.NotSet # デフォルト値としてNotSetを設定
     if milestone_id:
         try:
             milestone_obj_for_creation = repo.get_milestone(milestone_id)
         except GithubException as e:
             print(f"Warning: Could not retrieve milestone with ID {milestone_id} for issue creation '{title}' in {repo.full_name}: {e}. Issue will be created without milestone.")
+            # 取得に失敗した場合も NotSet に戻す
+            milestone_obj_for_creation = GithubObject.NotSet
         
     try:
         issue = repo.create_issue(
             title=title,
             body=description,
             labels=labels_to_add,
-            milestone=milestone_obj_for_creation # MilestoneオブジェクトまたはNoneを渡す
+            milestone=milestone_obj_for_creation # Milestoneオブジェクト、またはGithubObject.NotSet を渡す
         )
         print(f"Successfully created issue '{title}' in {repo.full_name} (Issue #{issue.number}).")
         return issue

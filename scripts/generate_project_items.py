@@ -28,7 +28,7 @@ try:
     frontend_repo = org.get_repo(FRONTEND_REPO_NAME)
     backend_repo = org.get_repo(BACKEND_REPO_NAME)
     
-    # ターゲットリポジトリのマッピング
+    # ターゲットリポジリポトリのマッピング
     REPO_MAP = {
         "frontend": frontend_repo,
         "backend": backend_repo,
@@ -78,7 +78,7 @@ def call_gemini_api(prompt_text: str) -> dict:
 
 def get_or_create_milestone(repo, milestone_data: dict) -> int:
     """
-    指定されたリポジトリにマイルストーンが存在するか確認し、なければ作成する。
+    指定されたリポジリポトリにマイルストーンが存在するか確認し、なければ作成する。
     """
     milestone_name = milestone_data.get('name')
     milestone_description = milestone_data.get('description', '')
@@ -224,7 +224,7 @@ def add_issue_to_github_project(org_name: str, project_name: str, issue_number: 
             sys.exit(1)
 
         try:
-            all_projects = json.loads(list_result.stdout)
+            raw_projects_output = json.loads(list_result.stdout)
         except json.JSONDecodeError as e:
             print(f"Error: Failed to parse JSON from 'gh project list' stdout: {e}")
             print(f"  Problematic stdout content: {list_result.stdout[:500]}...") # エラー箇所の先頭500文字を出力
@@ -232,8 +232,11 @@ def add_issue_to_github_project(org_name: str, project_name: str, issue_number: 
         
         project_id = None
         # all_projectsがリストであることを確認し、各要素が辞書であることを期待する
+        # ★ここを修正: JSON出力のトップレベルが辞書であることを考慮し、'projects'キーからリストを取得★
+        all_projects = raw_projects_output.get('projects', []) 
+
         if not isinstance(all_projects, list):
-            print(f"Error: Expected JSON output from 'gh project list' to be a list, but got: {type(all_projects)}. Full output:\n{list_result.stdout}")
+            print(f"Error: Expected 'projects' key in JSON output from 'gh project list' to be a list, but got: {type(all_projects)}. Full output:\n{list_result.stdout}")
             sys.exit(1)
 
         for p in all_projects:
@@ -309,13 +312,13 @@ def main():
     - **マイルストーン**は以下のフィールドを持つものとします。
       - `name`: マイルストーンのタイトル (文字列, 必須)
       - `description`: マイルストーンの説明 (文字列, オプション)
-      - `target_repositories`: このマイルストーンが関連するリポジトリのリスト (例: `["frontend", "backend"]`)
+      - `target_repositories`: このマイルストーンが関連するリポジリポトリのリスト (例: `["frontend", "backend"]`)
       - `due_on`: マイルストーンの期限 (YYYY-MM-DD形式の文字列, オプション)
 
     - **タスク**は以下のフィールドを持つものとします。
       - `title`: Issueのタイトル (文字列, 必須)
       - `description`: Issueの説明 (文字列, オプション)
-      - `target_repository`: このタスクが属するリポジトリ ('frontend' または 'backend')
+      - `target_repository`: このタスクが属するリポジリポトリ ('frontend' または 'backend')
       - `assignee_candidate`: 担当者候補 ('frontend' または 'backend')
       - `priority`: タスクの優先順位 ('high', 'medium', 'low' のいずれか, オプション)
       - `milestone_name`: このタスクを紐付けるマイルストーンの`name` (文字列, マイルストーンがなければ空文字列 `""`)
@@ -383,7 +386,7 @@ def main():
     milestones_data = llm_output.get('milestones', [])
     tasks_data = llm_output.get('tasks', [])
 
-    # 4. マイルストーンの作成/取得 (リポジトリごとにIDを保持)
+    # 4. マイルストーンの作成/取得 (リポジリポトリごとにIDを保持)
     # { "milestone_name": { "frontend": milestone_id, "backend": milestone_id } }
     created_milestone_ids = {}
 

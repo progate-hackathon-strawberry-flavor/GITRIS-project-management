@@ -42,7 +42,7 @@ def call_gemini_api(prompt_text: str) -> dict:
     """
     Gemini Pro APIを呼び出し、構造化されたJSONデータを取得する。
     """
-    api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={GEMINI_API_KEY}"
+    api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
     headers = {'Content-Type': 'application/json'}
     payload = {
         'contents': [{'parts': [{'text': prompt_text}]}],

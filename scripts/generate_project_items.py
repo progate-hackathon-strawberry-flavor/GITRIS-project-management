@@ -155,10 +155,28 @@ def create_github_issue(repo, issue_data: dict, milestone_id: int):
     # 既存のIssueを検索するためのマイルストーン引数を決定
     milestone_filter_arg = None
     if milestone_id:
-        try:
-            milestone_filter_arg = repo.get_milestone(milestone_id)
-        except GithubException as e:
-            print(f"Warning: Could not retrieve milestone with ID {milestone_id} for issue '{title}' in {repo.full_name} for duplicate check: {e}. Proceeding without milestone filter for duplicate check.")
+        max_retries_filter = 3
+        current_retry_filter = 0
+        while current_retry_filter < max_retries_filter:
+            try:
+                milestone_filter_arg = repo.get_milestone(milestone_id)
+                print(f"DEBUG: Successfully retrieved milestone for duplicate check with ID {milestone_id}.")
+                break
+            except GithubException as e:
+                if e.status == 404:
+                    print(f"Warning: Milestone ID {milestone_id} not found yet for duplicate check (retry {current_retry_filter + 1}/{max_retries_filter}). Retrying in {current_retry_filter + 1} seconds...")
+                    time.sleep(current_retry_filter + 1)
+                    current_retry_filter += 1
+                else:
+                    print(f"Warning: Could not retrieve milestone with ID {milestone_id} for issue '{title}' in {repo.full_name} for duplicate check: {e}. Proceeding without milestone filter for duplicate check.")
+                    milestone_filter_arg = 'none'
+                    break
+            except Exception as e:
+                print(f"An unexpected error occurred while retrieving milestone for duplicate check: {e}. Proceeding without milestone filter for duplicate check.")
+                milestone_filter_arg = 'none'
+                break
+        else:
+            print(f"Warning: All retries failed for milestone ID {milestone_id} in duplicate check. Proceeding without milestone filter.")
             milestone_filter_arg = 'none'
     else:
         milestone_filter_arg = 'none'
@@ -185,14 +203,31 @@ def create_github_issue(repo, issue_data: dict, milestone_id: int):
     # Issue作成時に渡すマイルストーンオブジェクトを決定
     milestone_obj_for_creation = GithubObject.NotSet # デフォルト値としてNotSetを設定
     if milestone_id:
-        try:
-            milestone_obj_for_creation = repo.get_milestone(milestone_id)
-            print(f"DEBUG: Retrieved milestone object for ID {milestone_id} for repo {repo.full_name}: {milestone_obj_for_creation}") # DEBUGログを強化
-        except GithubException as e:
-            print(f"Warning: Could not retrieve milestone with ID {milestone_id} for issue creation '{title}' in {repo.full_name}: {e}. Issue will be created without milestone.")
+        max_retries_creation = 5
+        current_retry_creation = 0
+        while current_retry_creation < max_retries_creation:
+            try:
+                milestone_obj_for_creation = repo.get_milestone(milestone_id)
+                print(f"DEBUG: Retrieved milestone object for ID {milestone_id} for repo {repo.full_name}: {milestone_obj_for_creation}")
+                break # Successfully retrieved, exit retry loop
+            except GithubException as e:
+                if e.status == 404:
+                    print(f"Warning: Milestone ID {milestone_id} not found yet (retry {current_retry_creation + 1}/{max_retries_creation}). Retrying in {current_retry_creation + 1} seconds...")
+                    time.sleep(current_retry_creation + 1) # Linear backoff
+                    current_retry_creation += 1
+                else:
+                    print(f"Error: Could not retrieve milestone with ID {milestone_id} for issue creation '{title}' in {repo.full_name}: {e}. Issue will be created without milestone.")
+                    milestone_obj_for_creation = GithubObject.NotSet
+                    break # Break on non-404 error
+            except Exception as e:
+                print(f"An unexpected error occurred while retrieving milestone: {e}. Issue will be created without milestone.")
+                milestone_obj_for_creation = GithubObject.NotSet
+                break # Break on unexpected error
+        else: # This block executes if the loop finishes without a 'break' (i.e., all retries failed)
+            print(f"Warning: All retries failed for milestone ID {milestone_id}. Issue will be created without milestone.")
             milestone_obj_for_creation = GithubObject.NotSet
 
-    print(f"DEBUG: Creating issue '{title}' with milestone_id: {milestone_id} and milestone_obj: {milestone_obj_for_creation}") # DEBUGログを強化
+    print(f"DEBUG: Creating issue '{title}' with milestone_id: {milestone_id} and milestone_obj: {milestone_obj_for_creation}")
 
     try:
         issue = repo.create_issue(
@@ -207,7 +242,7 @@ def create_github_issue(repo, issue_data: dict, milestone_id: int):
         print(f"Error creating issue '{title}' in {repo.full_name}: {e}")
         return None
 
-def add_issue_to_github_project(org_name: str, project_name: str, issue_obj: 'Issue'): # ここを修正しました
+def add_issue_to_github_project(org_name: str, project_name: str, issue_obj: 'Issue'):
     """
     gh CLI を使用してIssueをGitHub Projectに追加する。
     """

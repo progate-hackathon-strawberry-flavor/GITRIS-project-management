@@ -202,7 +202,7 @@ def add_issue_to_github_project(org_name: str, project_name: str, issue_obj: Iss
     """
     print(f"Adding issue #{issue_obj.number} from {issue_obj.repository.full_name} to GitHub Project '{project_name}'...")
     try:
-        # Step 1: プロジェクトIDを取得する
+        # Step 1: プロジェクトIDと番号を取得する
         # gh project list --owner <org_name> --format json
         list_cmd = [
             'gh', 'project', 'list',
@@ -228,7 +228,9 @@ def add_issue_to_github_project(org_name: str, project_name: str, issue_obj: Iss
             print(f"  Problematic stdout content: {list_result.stdout[:500]}...")
             sys.exit(1)
         
-        project_id = None
+        project_target_id = None # プロジェクトID（PVT_...）
+        project_number = None    # プロジェクト番号（例: 2）
+
         all_projects = raw_projects_output.get('projects', []) 
 
         if not isinstance(all_projects, list):
@@ -244,20 +246,21 @@ def add_issue_to_github_project(org_name: str, project_name: str, issue_obj: Iss
 
             owner_login = p.get('owner', {}).get('login')
             if owner_login == org_name and p.get('title') == project_name:
-                project_id = p.get('id')
+                project_target_id = p.get('id')
+                project_number = p.get('number') # プロジェクト番号も取得
                 break
 
-        if not project_id:
+        if not project_target_id or not project_number:
             print(f"Error: GitHub Project '{project_name}' not found for owner '{org_name}'. Please ensure the project exists and the PAT has sufficient permissions to list it.")
             print(f"Hint: You can check existing projects by running: gh project list --owner {org_name} --web")
             sys.exit(1)
 
-        print(f"Found Project '{project_name}' with ID: {project_id}")
+        print(f"Found Project '{project_name}' with ID: {project_target_id} and Number: {project_number}")
 
         # Step 2: Issueをプロジェクトに追加する
-        # コマンドを修正: gh project item-add <project-id> --url <issue-url>
+        # gh project item-add <project-number> --url <issue-url>
         cmd = [
-            'gh', 'project', 'item-add', project_id, # プロジェクトID
+            'gh', 'project', 'item-add', str(project_number), # プロジェクト番号を文字列で渡す
             '--url', issue_obj.html_url # Issue URLを --url フラグで渡す
         ]
         

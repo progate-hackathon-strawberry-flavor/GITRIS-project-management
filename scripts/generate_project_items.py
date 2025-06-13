@@ -4,7 +4,7 @@ import json
 import sys
 import requests
 from github import Github, GithubException, GithubObject 
-from github.Issue import Issue # ★github.Issue.Issue をインポート ★
+from github.Issue import Issue 
 import subprocess
 from datetime import datetime, timedelta
 
@@ -29,7 +29,7 @@ try:
     frontend_repo = org.get_repo(FRONTEND_REPO_NAME)
     backend_repo = org.get_repo(BACKEND_REPO_NAME)
     
-    # ターゲットリポジリポトリのマッピング
+    # ターゲットリポジトリのマッピング
     REPO_MAP = {
         "frontend": frontend_repo,
         "backend": backend_repo,
@@ -79,7 +79,7 @@ def call_gemini_api(prompt_text: str) -> dict:
 
 def get_or_create_milestone(repo, milestone_data: dict) -> int:
     """
-    指定されたリポジリポトリにマイルストーンが存在するか確認し、なければ作成する。
+    指定されたリポジトリにマイルストーンが存在するか確認し、なければ作成する。
     """
     milestone_name = milestone_data.get('name')
     milestone_description = milestone_data.get('description', '')
@@ -122,7 +122,7 @@ def get_or_create_milestone(repo, milestone_data: dict) -> int:
 
 def create_github_issue(repo, issue_data: dict, milestone_id: int):
     """
-    指定されたリポジリポトリにIssueを作成し、マイルストーンやラベルを紐付ける。
+    指定されたリポジトリにIssueを作成し、マイルストーンやラベルを紐付ける。
     """
     title = issue_data.get('title')
     description = issue_data.get('description', '')
@@ -196,11 +196,11 @@ def create_github_issue(repo, issue_data: dict, milestone_id: int):
         print(f"Error creating issue '{title}' in {repo.full_name}: {e}")
         return None
 
-def add_issue_to_github_project(org_name: str, project_name: str, issue_obj: Issue): # ★引数をIssueオブジェクトに変更★
+def add_issue_to_github_project(org_name: str, project_name: str, issue_obj: Issue):
     """
     gh CLI を使用してIssueをGitHub Projectに追加する。
     """
-    print(f"Adding issue #{issue_obj.number} from {issue_obj.repository.full_name} to GitHub Project '{project_name}'...") # ★ログメッセージも変更★
+    print(f"Adding issue #{issue_obj.number} from {issue_obj.repository.full_name} to GitHub Project '{project_name}'...")
     try:
         # Step 1: プロジェクトIDを取得する
         # gh project list --owner <org_name> --format json
@@ -257,15 +257,15 @@ def add_issue_to_github_project(org_name: str, project_name: str, issue_obj: Iss
         # Step 2: Issueをプロジェクトに追加する
         # gh project item add <project-id> <issue-url>
         cmd = [
-            'gh', 'project', 'item', 'add', project_id, # プロジェクトIDを直接渡す
-            issue_obj.html_url # ★IssueのURLを直接渡す★
+            'gh', 'project', 'item-add', project_id, # ここを item-add に修正
+            issue_obj.html_url 
         ]
         
-        print(f"DEBUG: Running gh project item add command: {' '.join(cmd)}")
+        print(f"DEBUG: Running gh project item-add command: {' '.join(cmd)}")
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        print(f"DEBUG: gh project item add stdout:\n{result.stdout}")
+        print(f"DEBUG: gh project item-add stdout:\n{result.stdout}")
         if result.stderr:
-            print(f"DEBUG: gh project item add stderr:\n{result.stderr}")
+            print(f"DEBUG: gh project item-add stderr:\n{result.stderr}")
 
         print(f"Successfully added issue #{issue_obj.number} to Project '{project_name}'.")
     except subprocess.CalledProcessError as e:
@@ -304,13 +304,13 @@ def main():
     - **マイルストーン**は以下のフィールドを持つものとします。
       - `name`: マイルストーンのタイトル (文字列, 必須)
       - `description`: マイルストーンの説明 (文字列, オプション)
-      - `target_repositories`: このマイルストーンが関連するリポジリポトリのリスト (例: `["frontend", "backend"]`)
+      - `target_repositories`: このマイルストーンが関連するリポジトリのリスト (例: `["frontend", "backend"]`)
       - `due_on`: マイルストーンの期限 (YYYY-MM-DD形式の文字列, オプション)
 
     - **タスク**は以下のフィールドを持つものとします。
       - `title`: Issueのタイトル (文字列, 必須)
       - `description`: Issueの説明 (文字列, オプション)
-      - `target_repository`: このタスクが属するリポジリポトリ ('frontend' または 'backend')
+      - `target_repository`: このタスクが属するリポジトリ ('frontend' または 'backend')
       - `assignee_candidate`: 担当者候補 ('frontend' または 'backend')
       - `priority`: タスクの優先順位 ('high', 'medium', 'low' のいずれか, オプション)
       - `milestone_name`: このタスクを紐付けるマイルストーンの`name` (文字列, マイルストーンがなければ空文字列 `""`)
@@ -378,7 +378,7 @@ def main():
     milestones_data = llm_output.get('milestones', [])
     tasks_data = llm_output.get('tasks', [])
 
-    # 4. マイルストーンの作成/取得 (リポジリポトリごとにIDを保持)
+    # 4. マイルストーンの作成/取得 (リポジトリごとにIDを保持)
     # { "milestone_name": { "frontend": milestone_id, "backend": milestone_id } }
     created_milestone_ids = {}
 
@@ -430,7 +430,7 @@ def main():
             add_issue_to_github_project(
                 GITHUB_ORG_NAME,
                 GITHUB_PROJECT_NAME,
-                created_issue # ★ここをIssueオブジェクト全体に変更★
+                created_issue # ここはIssueオブジェクトのまま
             )
         else:
             print(f"Warning: Issue '{task_title}' was not created or found. Skipping Project linking.")

@@ -9,11 +9,11 @@ on:
       - 'requirements.md'
 
 permissions:
-  contents: read
+  contents: read # requirements.md を読み込むため
 
 jobs:
   generate_tasks_and_milestones:
-    runs-on: ubuntu-latest # ubuntu-latest のままで大丈夫です
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
@@ -28,35 +28,29 @@ jobs:
         run: |
           pip install requests PyGithub
 
-      - name: Install GitHub CLI # ★このステップを修正★
+      - name: Install GitHub CLI
         run: |
-          # GitHub CLI の .deb パッケージを直接ダウンロードしてインストールする
-          # 最新の安定版のバージョン番号を https://github.com/cli/cli/releases で確認し、必要に応じて変更してください。
-          # 例: 2.37.0 が最新の場合
-          GH_VERSION="2.37.0" # ここに最新の安定版バージョンを指定
-          GH_DEB="gh_${GH_VERSION}_linux_amd64.deb"
-          
-          # .deb ファイルをダウンロード
-          curl -LO https://github.com/cli/cli/releases/download/v${GH_VERSION}/${GH_DEB}
-          
-          # ダウンロードしたdebファイルをインストール
-          sudo dpkg -i ${GH_DEB}
-          
-          # 依存関係が不足している場合にインストール (オプション)
-          sudo apt install -f -y
-
-          # インストールされたgh CLIのバージョンを確認（デバッグ用）
-          gh --version
+          # GitHub CLI を手動でインストールするコマンド (最新版を確実にインストール)
+          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+          sudo apt update
+          sudo apt install gh -y
         env:
-          GITHUB_TOKEN: ${{ secrets.GH_PAT_FOR_PM }}
-          
+          GITHUB_TOKEN: ${{ secrets.GH_PAT_FOR_PM }} # 環境変数としてトークンを設定
+
       - name: Run AI-powered Project Item Generator
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          GITHUB_TOKEN: ${{ secrets.GH_PAT_FOR_PM }}
+          # GitHub APIへの認証にPATを使用（secrets.GH_PAT_FOR_PMをGITHUB_TOKENとして渡す）
+          GITHUB_TOKEN: ${{ secrets.GH_PAT_FOR_PM }} 
           GITHUB_ORG_NAME: ${{ github.repository_owner }}
           FRONTEND_REPO_NAME: "GITRIS-frontend"
           BACKEND_REPO_NAME: "GITRIS-backend"
-          GITHUB_PROJECT_NAME: "GITRIS"
+          GITHUB_PROJECT_NAME: "GITRIS Development Board"
         run: |
+          # 明示的にgh CLIにログインする
+          echo "$GITHUB_TOKEN" | gh auth login --with-token
+          gh auth status # ログイン状態を確認（デバッグ用。成功していれば'Logged in to github.com'と表示）
+
+          # その後、Pythonスクリプトを実行
           python scripts/generate_project_items.py requirements.md

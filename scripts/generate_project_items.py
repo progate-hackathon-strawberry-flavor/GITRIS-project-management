@@ -78,7 +78,7 @@ def call_gemini_api(prompt_text: str) -> dict:
 
 def get_or_create_milestone(repo, milestone_data: dict) -> int:
     """
-    指定されたリポジトリにマイルストーンが存在するか確認し、なければ作成する。
+    指定されたリポジリにマイルストーンが存在するか確認し、なければ作成する。
     """
     milestone_name = milestone_data.get('name')
     milestone_description = milestone_data.get('description') # descriptionをそのまま取得
@@ -130,7 +130,7 @@ def get_or_create_milestone(repo, milestone_data: dict) -> int:
 
 def create_github_issue(repo, issue_data: dict, milestone_id: int):
     """
-    指定されたリポジトリにIssueを作成し、マイルストーンやラベルを紐付ける。
+    指定されたリポジリにIssueを作成し、マイルストーンやラベルを紐付ける。
     """
     title = issue_data.get('title')
     description = issue_data.get('description', '')
@@ -207,7 +207,7 @@ def create_github_issue(repo, issue_data: dict, milestone_id: int):
         print(f"Error creating issue '{title}' in {repo.full_name}: {e}")
         return None
 
-def add_issue_to_github_project(org_name: str, project_name: str, issue_obj: Issue):
+def add_issue_to_github_project(org_name: str, project_name: str, issue_obj: 'Issue'): # ここを修正しました
     """
     gh CLI を使用してIssueをGitHub Projectに追加する。
     """

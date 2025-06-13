@@ -201,12 +201,34 @@ def add_issue_to_github_project(org_name: str, project_name: str, issue_number: 
     """
     print(f"Adding issue #{issue_number} from {repo_full_name} to GitHub Project '{project_name}'...")
     try:
-        # gh CLI の `project item add` コマンドを使用
-        # プロジェクトを特定するために `--owner` とプロジェクト名を指定
-        # Issueを特定するために --issue と issue_number を指定
+        # Step 1: プロジェクトIDを取得する
+        # gh project list --owner <org_name> --format json
+        # ここで `project_name` は "GITRIS Development Board" のような完全な名前
+        list_cmd = [
+            'gh', 'project', 'list',
+            '--owner', org_name,
+            '--format', 'json',
+            '--json', 'id,title' # IDとタイトルを取得
+        ]
+        list_result = subprocess.run(list_cmd, capture_output=True, text=True, check=True)
+        projects = json.loads(list_result.stdout)
+        
+        project_id = None
+        for p in projects:
+            if p.get('title') == project_name: # プロジェクトタイトルで検索
+                project_id = p.get('id')
+                break
+
+        if not project_id:
+            print(f"Error: GitHub Project '{project_name}' not found for owner '{org_name}'.")
+            sys.exit(1)
+
+        print(f"Found Project '{project_name}' with ID: {project_id}")
+
+        # Step 2: Issueをプロジェクトに追加する
+        # gh project item add <project-id> --issue <issue-number> --repo <repo-full-name>
         cmd = [
-            'gh', 'project', 'item', 'add', project_name, # プロジェクト名を直接渡す
-            '--owner', org_name, # Organizationレベルのプロジェクトのオーナー (Organization名)
+            'gh', 'project', 'item', 'add', project_id, # プロジェクトIDを直接渡す
             '--issue', str(issue_number),
             '--repo', repo_full_name # Issueが属するリポジトリのフルネーム
         ]

@@ -8,12 +8,8 @@ on:
     paths:
       - 'requirements.md'
 
-# ここでpermissionsセクションを削除するか、read権限のみに絞る
-# なぜなら、Issue/マイルストーンの作成はPATで行い、GITHUB_TOKENの権限は最小限にするため
 permissions:
   contents: read # requirements.md を読み込むため
-  # issues: write, pull-requests: write, repository-projects: write などは削除
-  # これらの書き込み権限はPATで提供するため、GITHUB_TOKENには不要
 
 jobs:
   generate_tasks_and_milestones:
@@ -32,23 +28,24 @@ jobs:
         run: |
           pip install requests PyGithub
 
-      - name: Install GitHub CLI
-        # 修正: 'cli/cli/setup-gh@v0' から 'cli/cli@v2' へ変更
-        uses: cli/cli@v2
-        with:
-          version: 'latest'
+      - name: Install GitHub CLI # ★このステップを修正★
+        run: |
+          # GitHub CLI を手動でインストールするコマンド
+          # 最新の安定版をインストール
+          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+          sudo apt update
+          sudo apt install gh -y
         env:
-          # gh CLI の認証にもPATを使用
-          GITHUB_TOKEN: ${{ secrets.GH_PAT_FOR_PM }}
+          GITHUB_TOKEN: ${{ secrets.GH_PAT_FOR_PM }} # gh CLI の認証用トークン (インストール後も設定される)
 
       - name: Run AI-powered Project Item Generator
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          # GitHub APIへの認証にPATを使用
-          GITHUB_TOKEN: ${{ secrets.GH_PAT_FOR_PM }} # ここをPATのSecret名に変更
+          GITHUB_TOKEN: ${{ secrets.GH_PAT_FOR_PM }}
           GITHUB_ORG_NAME: ${{ github.repository_owner }}
-          FRONTEND_REPO_NAME: "GITRIS-frontend" # あなたのフロントエンドリポジトリ名
-          BACKEND_REPO_NAME: "GITRIS-backend"   # あなたのバックエンドリポジトリ名
-          GITHUB_PROJECT_NAME: "GITRIS Development Board" # あなたのGitHub Project名
+          FRONTEND_REPO_NAME: "GITRIS-frontend"
+          BACKEND_REPO_NAME: "GITRIS-backend"
+          GITHUB_PROJECT_NAME: "GITRIS"
         run: |
           python scripts/generate_project_items.py requirements.md

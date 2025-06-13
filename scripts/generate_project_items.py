@@ -101,18 +101,21 @@ def get_or_create_milestone(repo, milestone_data: dict) -> int:
     print(f"Creating new milestone '{milestone_name}' in {repo.full_name}...")
     
     # due_onの日付をdatetimeオブジェクトに変換
-    due_on_dt = None
+    # ここを修正: milestone_due_on が None の場合、GithubObject.NotSet を渡す
+    due_on_dt_or_notset = GithubObject.NotSet
     if milestone_due_on:
         try:
-            due_on_dt = datetime.strptime(milestone_due_on, "%Y-%m-%d")
+            due_on_dt_or_notset = datetime.strptime(milestone_due_on, "%Y-%m-%d")
         except ValueError:
             print(f"Warning: Invalid date format for milestone '{milestone_name}' due_on: {milestone_due_on}. Skipping due_on.")
+            # エラーの場合も NotSet のままにする
+            due_on_dt_or_notset = GithubObject.NotSet
 
     try:
         new_milestone = repo.create_milestone(
             title=milestone_name,
             description=milestone_description,
-            due_on=due_on_dt # datetimeオブジェクトとして渡す
+            due_on=due_on_dt_or_notset # GithubObject.NotSet または datetime オブジェクトを渡す
         )
         print(f"Successfully created milestone '{milestone_name}' in {repo.full_name} (ID: {new_milestone.id}).")
         return new_milestone.id
@@ -172,21 +175,24 @@ def create_github_issue(repo, issue_data: dict, milestone_id: int):
 
     print(f"Creating issue '{title}' in {repo.full_name}...")
     
+    # Issue説明を決定: description が None または空文字列の場合、GithubObject.NotSet を渡す
+    description_or_notset = GithubObject.NotSet
+    if description: # description が None でなく、かつ空文字列でもない場合
+        description_or_notset = description
+
     # Issue作成時に渡すマイルストーンオブジェクトを決定
-    # ここが今回の修正の核心: milestone_id がNoneの場合、GithubObject.NotSet を渡す
     milestone_obj_for_creation = GithubObject.NotSet # デフォルト値としてNotSetを設定
     if milestone_id:
         try:
             milestone_obj_for_creation = repo.get_milestone(milestone_id)
         except GithubException as e:
             print(f"Warning: Could not retrieve milestone with ID {milestone_id} for issue creation '{title}' in {repo.full_name}: {e}. Issue will be created without milestone.")
-            # 取得に失敗した場合も NotSet に戻す
-            milestone_obj_for_creation = GithubObject.NotSet
+            milestone_obj_for_creation = GithubObject.NotSet # 取得に失敗した場合も NotSet に戻す
         
     try:
         issue = repo.create_issue(
             title=title,
-            body=description,
+            body=description_or_notset, # ★修正: description_or_notset を渡す★
             labels=labels_to_add,
             milestone=milestone_obj_for_creation # Milestoneオブジェクト、またはGithubObject.NotSet を渡す
         )
@@ -228,8 +234,8 @@ def add_issue_to_github_project(org_name: str, project_name: str, issue_obj: Iss
             print(f"  Problematic stdout content: {list_result.stdout[:500]}...")
             sys.exit(1)
         
-        project_target_id = None # プロジェクトID（PVT_...）
-        project_number = None    # プロジェクト番号（例: 2）
+        project_target_id = None 
+        project_number = None    
 
         all_projects = raw_projects_output.get('projects', []) 
 
@@ -247,10 +253,10 @@ def add_issue_to_github_project(org_name: str, project_name: str, issue_obj: Iss
             owner_login = p.get('owner', {}).get('login')
             if owner_login == org_name and p.get('title') == project_name:
                 project_target_id = p.get('id')
-                project_number = p.get('number') # プロジェクト番号も取得
+                project_number = p.get('number') 
                 break
 
-        if not project_target_id or not project_number: # project_number もチェック
+        if not project_target_id or not project_number: 
             print(f"Error: GitHub Project '{project_name}' not found for owner '{org_name}'. Please ensure the project exists and the PAT has sufficient permissions to list it.")
             print(f"Hint: You can check existing projects by running: gh project list --owner {org_name} --web")
             sys.exit(1)
@@ -258,11 +264,11 @@ def add_issue_to_github_project(org_name: str, project_name: str, issue_obj: Iss
         print(f"Found Project '{project_name}' with ID: {project_target_id} and Number: {project_number}")
 
         # Step 2: Issueをプロジェクトに追加する
-        # gh project item-add <project-number> --url <issue-url>
+        # gh project item-add <project-number> --url <issue-url> --owner <org-name>
         cmd = [
             'gh', 'project', 'item-add', str(project_number), # プロジェクト番号を文字列で渡す
             '--url', issue_obj.html_url, # Issue URLを --url フラグで渡す
-            '--owner', org_name # ★ --owner フラグをここに追加 ★
+            '--owner', org_name # --owner フラグをここに追加
         ]
         
         print(f"DEBUG: Running gh project item-add command: {' '.join(cmd)}")

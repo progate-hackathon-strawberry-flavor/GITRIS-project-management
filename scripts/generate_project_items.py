@@ -255,10 +255,10 @@ def add_issue_to_github_project(org_name: str, project_name: str, issue_obj: Iss
         print(f"Found Project '{project_name}' with ID: {project_id}")
 
         # Step 2: Issueをプロジェクトに追加する
-        # gh project item add <project-id> <issue-url>
+        # コマンドを修正: gh project item-add <project-id> --issue <issue-url>
         cmd = [
-            'gh', 'project', 'item-add', project_id, # ここを item-add に修正
-            issue_obj.html_url 
+            'gh', 'project', 'item-add', project_id, # プロジェクトID
+            '--issue', issue_obj.html_url # Issue URLを --issue フラグで渡す
         ]
         
         print(f"DEBUG: Running gh project item-add command: {' '.join(cmd)}")
@@ -430,7 +430,7 @@ def main():
             add_issue_to_github_project(
                 GITHUB_ORG_NAME,
                 GITHUB_PROJECT_NAME,
-                created_issue # ここはIssueオブジェクトのまま
+                created_issue # Issueオブジェクトのまま渡す
             )
         else:
             print(f"Warning: Issue '{task_title}' was not created or found. Skipping Project linking.")

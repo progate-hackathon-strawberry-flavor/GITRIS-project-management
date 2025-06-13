@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   generate_tasks_and_milestones:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest # ubuntu-latest のままで大丈夫です
 
     steps:
       - name: Checkout repository
@@ -30,18 +30,26 @@ jobs:
 
       - name: Install GitHub CLI # ★このステップを修正★
         run: |
-          # GitHub CLI を手動でインストールするコマンド
-          # 最新の安定版を確実にインストールするため、ppa を追加してインストール
-          sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-key C99B11DEB97541F0 # 新しいリポジトリキー
-          sudo apt-add-repository https://cli.github.com/packages # gh CLI のPPAを追加
-          sudo apt update
-          sudo apt install gh -y
+          # GitHub CLI の .deb パッケージを直接ダウンロードしてインストールする
+          # 最新の安定版のバージョン番号を https://github.com/cli/cli/releases で確認し、必要に応じて変更してください。
+          # 例: 2.37.0 が最新の場合
+          GH_VERSION="2.37.0" # ここに最新の安定版バージョンを指定
+          GH_DEB="gh_${GH_VERSION}_linux_amd64.deb"
+          
+          # .deb ファイルをダウンロード
+          curl -LO https://github.com/cli/cli/releases/download/v${GH_VERSION}/${GH_DEB}
+          
+          # ダウンロードしたdebファイルをインストール
+          sudo dpkg -i ${GH_DEB}
+          
+          # 依存関係が不足している場合にインストール (オプション)
+          sudo apt install -f -y
 
           # インストールされたgh CLIのバージョンを確認（デバッグ用）
           gh --version
         env:
           GITHUB_TOKEN: ${{ secrets.GH_PAT_FOR_PM }}
-
+          
       - name: Run AI-powered Project Item Generator
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
@@ -49,6 +57,6 @@ jobs:
           GITHUB_ORG_NAME: ${{ github.repository_owner }}
           FRONTEND_REPO_NAME: "GITRIS-frontend"
           BACKEND_REPO_NAME: "GITRIS-backend"
-          GITHUB_PROJECT_NAME: "GITRIS Development Board"
+          GITHUB_PROJECT_NAME: "GITRIS"
         run: |
           python scripts/generate_project_items.py requirements.md

@@ -1,4 +1,3 @@
-# scripts/generate_project_items.py
 import os
 import json
 import sys
@@ -83,7 +82,9 @@ def get_or_create_milestone(repo, milestone_data: dict) -> int:
     """
     milestone_name = milestone_data.get('name')
     milestone_description = milestone_data.get('description', '')
-    milestone_due_on = milestone_data.get('due_on') # 例: "YYYY-MM-DD"
+    milestone_due_on = milestone_data.get('due_on')
+
+    print(f"DEBUG: Attempting to get/create milestone. Name: '{milestone_name}', Due_on: '{milestone_due_on}' for repo: {repo.full_name}") # 追加
 
     if not milestone_name:
         print("Warning: Milestone name is missing. Skipping milestone creation.")
@@ -106,6 +107,7 @@ def get_or_create_milestone(repo, milestone_data: dict) -> int:
     if milestone_due_on:
         try:
             due_on_dt_or_notset = datetime.strptime(milestone_due_on, "%Y-%m-%d")
+            print(f"DEBUG: Parsed due_on date: {due_on_dt_or_notset}") # 追加
         except ValueError:
             print(f"Warning: Invalid date format for milestone '{milestone_name}' due_on: {milestone_due_on}. Skipping due_on.")
             # エラーの場合も NotSet のままにする
@@ -192,7 +194,7 @@ def create_github_issue(repo, issue_data: dict, milestone_id: int):
     try:
         issue = repo.create_issue(
             title=title,
-            body=description_or_notset, # ★修正: description_or_notset を渡す★
+            body=description_or_notset,
             labels=labels_to_add,
             milestone=milestone_obj_for_creation # Milestoneオブジェクト、またはGithubObject.NotSet を渡す
         )
@@ -308,7 +310,7 @@ def main():
         sys.exit(1)
 
     # 2. LLMへのプロンプト作成
-        prompt = f"""
+    prompt = f"""
     以下の要件定義ドキュメントから、主要なマイルストーン（目標）と、それに付随する詳細なタスク（Issue）をJSON形式で抽出してください。
 
     - **マイルストーン**は以下のフィールドを持つものとします。
@@ -333,7 +335,7 @@ def main():
         {{
           "name": "GitHub OAuth 実装完了",
           "description": "ユーザーがGitHubアカウントでログインし、Supabaseと連携できる状態",
-          "target_repositories": ["frontend", "backend"], // ここにリポジトリが入るように強調
+          "target_repositories": ["frontend", "backend"],
           "due_on": "{datetime.now().strftime('%Y-%m-%d')}"
         }}
       ],
@@ -377,6 +379,7 @@ def main():
       ]
     }}
     ```
+
     **要件定義ドキュメント:**
     {requirements_content}
     """
@@ -400,16 +403,23 @@ def main():
         created_milestone_ids[m_name] = {}
         target_repos_for_milestone = m_data.get('target_repositories', [])
         
+        # DEBUG: Add this print to see what target_repos_for_milestone contains
+        print(f"DEBUG: Milestone '{m_name}' target repositories: {target_repos_for_milestone}")
+
         for repo_key in target_repos_for_milestone:
             target_repo_obj = REPO_MAP.get(repo_key)
             if target_repo_obj:
                 milestone_id = get_or_create_milestone(target_repo_obj, m_data)
                 if milestone_id:
                     created_milestone_ids[m_name][repo_key] = milestone_id
+                    print(f"DEBUG: Stored milestone ID {milestone_id} for '{m_name}' in '{repo_key}'.") # 追加
                 else:
                     print(f"Warning: Failed to get/create milestone '{m_name}' in {repo_key}. Associated issues might not be linked.")
             else:
                 print(f"Warning: Unknown target repository '{repo_key}' for milestone '{m_name}'. Skipping.")
+
+    # DEBUG: Print the final created_milestone_ids dictionary
+    print(f"DEBUG: Final created_milestone_ids: {created_milestone_ids}")
 
     # 5. タスク (Issue) の作成と紐付け
     for task_data in tasks_data:

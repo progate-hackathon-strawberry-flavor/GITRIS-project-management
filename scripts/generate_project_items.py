@@ -121,7 +121,7 @@ def get_or_create_milestone(repo, milestone_data: dict) -> int:
 
 def create_github_issue(repo, issue_data: dict, milestone_id: int):
     """
-    指定されたリポジトリにIssueを作成し、マイルストーンやラベルを紐付ける。
+    指定されたリポジリポトリにIssueを作成し、マイルストーンやラベルを紐付ける。
     """
     title = issue_data.get('title')
     description = issue_data.get('description', '')
@@ -202,24 +202,57 @@ def add_issue_to_github_project(org_name: str, project_name: str, issue_number: 
     print(f"Adding issue #{issue_number} from {repo_full_name} to GitHub Project '{project_name}'...")
     try:
         # Step 1: プロジェクトIDを取得する
-        # gh project list --format json で全プロジェクトを取得し、Python側でフィルタリング
+        # gh project list --owner <org_name> --format json
         list_cmd = [
             'gh', 'project', 'list',
-            '--format', 'json' # `--owner` や `--json` は削除
+            '--owner', org_name,
+            '--format', 'json'
         ]
+        
+        # デバッグ: コマンドと出力をログに出力
+        print(f"DEBUG: Running gh project list command: {' '.join(list_cmd)}")
         list_result = subprocess.run(list_cmd, capture_output=True, text=True, check=True)
-        all_projects = json.loads(list_result.stdout)
+        
+        # DEBUG: stdoutとstderrをそのまま出力
+        print(f"DEBUG: gh project list stdout raw:\n{list_result.stdout}")
+        if list_result.stderr:
+            print(f"DEBUG: gh project list stderr raw:\n{list_result.stderr}")
+
+        # JSONパースの前に、JSON出力が空でないことを確認
+        if not list_result.stdout.strip():
+            print(f"Error: 'gh project list' returned empty stdout. No projects found or command output issue.")
+            sys.exit(1)
+
+        try:
+            all_projects = json.loads(list_result.stdout)
+        except json.JSONDecodeError as e:
+            print(f"Error: Failed to parse JSON from 'gh project list' stdout: {e}")
+            print(f"  Problematic stdout content: {list_result.stdout[:500]}...") # エラー箇所の先頭500文字を出力
+            sys.exit(1)
         
         project_id = None
-        # Organization名とプロジェクトタイトルでフィルタリング
+        # all_projectsがリストであることを確認し、各要素が辞書であることを期待する
+        if not isinstance(all_projects, list):
+            print(f"Error: Expected JSON output from 'gh project list' to be a list, but got: {type(all_projects)}. Full output:\n{list_result.stdout}")
+            sys.exit(1)
+
         for p in all_projects:
-            # owner のログイン名が Organization名と一致し、かつプロジェクトタイトルが一致する場合
-            if p.get('owner', {}).get('login') == org_name and p.get('title') == project_name:
+            # デバッグ: 各プロジェクトオブジェクトの内容を出力
+            print(f"DEBUG: Processing project object: {p}")
+
+            # 'str' object has no attribute 'get' エラー対策
+            if not isinstance(p, dict):
+                print(f"Error: Expected project item to be a dictionary, but got {type(p)}. Content: {p}")
+                sys.exit(1)
+
+            owner_login = p.get('owner', {}).get('login')
+            if owner_login == org_name and p.get('title') == project_name:
                 project_id = p.get('id')
                 break
 
         if not project_id:
-            print(f"Error: GitHub Project '{project_name}' not found for owner '{org_name}'. Please ensure the project exists and the PAT has sufficient permissions.")
+            print(f"Error: GitHub Project '{project_name}' not found for owner '{org_name}'. Please ensure the project exists and the PAT has sufficient permissions to list it.")
+            print(f"Hint: You can check existing projects by running: gh project list --owner {org_name} --web")
             sys.exit(1)
 
         print(f"Found Project '{project_name}' with ID: {project_id}")
@@ -229,12 +262,16 @@ def add_issue_to_github_project(org_name: str, project_name: str, issue_number: 
         cmd = [
             'gh', 'project', 'item', 'add', project_id, # プロジェクトIDを直接渡す
             '--issue', str(issue_number),
-            '--repo', repo_full_name # Issueが属するリポジトリのフルネーム
+            '--repo', repo_full_name # Issueが属するリポジリポトリのフルネーム
         ]
+        
+        # デバッグ: コマンドと出力をログに出力
+        print(f"DEBUG: Running gh project item add command: {' '.join(cmd)}")
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        print(f"gh CLI stdout: {result.stdout}")
+        print(f"DEBUG: gh project item add stdout:\n{result.stdout}")
         if result.stderr:
-            print(f"gh CLI stderr: {result.stderr}")
+            print(f"DEBUG: gh project item add stderr:\n{result.stderr}")
+
         print(f"Successfully added issue #{issue_number} to Project '{project_name}'.")
     except subprocess.CalledProcessError as e:
         print(f"Error adding issue to GitHub Project: {e}")
@@ -266,7 +303,6 @@ def main():
         sys.exit(1)
 
     # 2. LLMへのプロンプト作成
-    # プロンプトの例を修正し、`milestone_name` が空文字列の場合の挙動を明確化
     prompt = f"""
     以下の要件定義ドキュメントから、主要なマイルストーン（目標）と、それに付随する詳細なタスク（Issue）をJSON形式で抽出してください。
 
@@ -400,7 +436,7 @@ def main():
                 GITHUB_ORG_NAME,
                 GITHUB_PROJECT_NAME,
                 created_issue.number,
-                created_issue.repository.full_name # Issueが作成されたリポジトリのフルネーム
+                created_issue.repository.full_name # Issueが作成されたリポジリポトリのフルネーム
             )
         else:
             print(f"Warning: Issue '{task_title}' was not created or found. Skipping Project linking.")

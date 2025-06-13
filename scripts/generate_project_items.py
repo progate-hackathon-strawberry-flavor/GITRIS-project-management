@@ -202,25 +202,24 @@ def add_issue_to_github_project(org_name: str, project_name: str, issue_number: 
     print(f"Adding issue #{issue_number} from {repo_full_name} to GitHub Project '{project_name}'...")
     try:
         # Step 1: プロジェクトIDを取得する
-        # gh project list --owner <org_name> --format json
-        # ここで `project_name` は "GITRIS Development Board" のような完全な名前
+        # gh project list --format json で全プロジェクトを取得し、Python側でフィルタリング
         list_cmd = [
             'gh', 'project', 'list',
-            '--owner', org_name,
-            '--format', 'json',
-            '--json', 'id,title' # IDとタイトルを取得
+            '--format', 'json' # `--owner` や `--json` は削除
         ]
         list_result = subprocess.run(list_cmd, capture_output=True, text=True, check=True)
-        projects = json.loads(list_result.stdout)
+        all_projects = json.loads(list_result.stdout)
         
         project_id = None
-        for p in projects:
-            if p.get('title') == project_name: # プロジェクトタイトルで検索
+        # Organization名とプロジェクトタイトルでフィルタリング
+        for p in all_projects:
+            # owner のログイン名が Organization名と一致し、かつプロジェクトタイトルが一致する場合
+            if p.get('owner', {}).get('login') == org_name and p.get('title') == project_name:
                 project_id = p.get('id')
                 break
 
         if not project_id:
-            print(f"Error: GitHub Project '{project_name}' not found for owner '{org_name}'.")
+            print(f"Error: GitHub Project '{project_name}' not found for owner '{org_name}'. Please ensure the project exists and the PAT has sufficient permissions.")
             sys.exit(1)
 
         print(f"Found Project '{project_name}' with ID: {project_id}")

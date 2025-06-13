@@ -458,4 +458,7 @@ def main():
         else:
             print(f"Warning: Issue '{task_title}' was not created or found. Skipping Project linking.")
 
-    pr
+    print("\nAI-powered project item generation complete!")
+
+if __name__ == "__main__":
+    main()

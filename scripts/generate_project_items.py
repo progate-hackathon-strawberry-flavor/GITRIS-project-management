@@ -3,6 +3,7 @@ import json
 import sys
 import requests
 from github import Github, GithubException, GithubObject
+from github.Milestone import Milestone # Milestoneクラスを明示的にインポート
 import subprocess
 from datetime import datetime, timedelta
 import time # timeモジュールをインポート
@@ -76,15 +77,15 @@ def call_gemini_api(prompt_text: str) -> dict:
 
 # --- GitHub操作関数 ---
 
-def get_or_create_milestone(repo, milestone_data: dict) -> int:
+# 戻り値をintからMilestoneオブジェクトに変更
+def get_or_create_milestone(repo, milestone_data: dict) -> 'Milestone' | None:
     """
     指定されたリポジリにマイルストーンが存在するか確認し、なければ作成する。
     """
     milestone_name = milestone_data.get('name')
-    milestone_description = milestone_data.get('description') # descriptionをそのまま取得
+    milestone_description = milestone_data.get('description')
     milestone_due_on = milestone_data.get('due_on')
 
-    # descriptionがNoneの場合、空文字列に変換してAssertionErrorを回避
     if milestone_description is None:
         milestone_description = ""
 
@@ -94,18 +95,14 @@ def get_or_create_milestone(repo, milestone_data: dict) -> int:
         print("Warning: Milestone name is missing. Skipping milestone creation.")
         return None
 
-    # 既存のマイルストーンを検索
-    # state='all' で開いているものと閉じているものの両方を検索
     existing_milestones = repo.get_milestones(state='all')
     for m in existing_milestones:
         if m.title == milestone_name:
             print(f"Milestone '{milestone_name}' already exists in {repo.full_name} (ID: {m.id}).")
-            return m.id # 既存のマイルストーンのIDを返す
+            return m # 既存のMilestoneオブジェクトを返す
 
-    # マイルストーンが存在しない場合、新規作成
     print(f"Creating new milestone '{milestone_name}' in {repo.full_name}...")
 
-    # due_onの日付をdatetimeオブジェクトに変換
     due_on_dt_or_notset = GithubObject.NotSet
     if milestone_due_on:
         try:
@@ -122,13 +119,14 @@ def get_or_create_milestone(repo, milestone_data: dict) -> int:
             due_on=due_on_dt_or_notset
         )
         print(f"Successfully created milestone '{milestone_name}' in {repo.full_name} (ID: {new_milestone.id}).")
-        time.sleep(2) # ここに2秒の遅延を追加
-        return new_milestone.id
+        time.sleep(2) # ここは念のため残しますが、後のロジックで再取得はしない
+        return new_milestone # 新しく作成したMilestoneオブジェクトを返す
     except GithubException as e:
         print(f"Error creating milestone '{milestone_name}' in {repo.full_name}: {e}")
         return None
 
-def create_github_issue(repo, issue_data: dict, milestone_id: int):
+# milestone_idの代わりにmilestone_obj_for_issueを受け取るように変更
+def create_github_issue(repo, issue_data: dict, milestone_obj_for_issue: 'Milestone' | None):
     """
     指定されたリポジリにIssueを作成し、マイルストーンやラベルを紐付ける。
     """
@@ -136,7 +134,7 @@ def create_github_issue(repo, issue_data: dict, milestone_id: int):
     description = issue_data.get('description', '')
     assignee_candidate = issue_data.get('assignee_candidate', 'unassigned')
     priority = issue_data.get('priority')
-    task_granularity = issue_data.get('task_granularity') # タスク粒度も取得
+    status = issue_data.get('status') # タスク粒度も取得
 
     if not title:
         print("Warning: Issue title is missing. Skipping issue creation.")
@@ -148,38 +146,13 @@ def create_github_issue(repo, issue_data: dict, milestone_id: int):
         labels_to_add.append(assignee_candidate) # ロール名をラベルとして追加
     if priority:
         labels_to_add.append(f"priority:{priority}") # 優先順位をラベルとして追加 (例: "priority:high")
-    if task_granularity: # タスク粒度もラベルとして追加
-        labels_to_add.append(f"granularity:{task_granularity}")
+    if status: # タスク粒度もラベルとして追加
+        labels_to_add.append(f"granularity:{status}")
 
 
     # 既存のIssueを検索するためのマイルストーン引数を決定
-    milestone_filter_arg = None
-    if milestone_id:
-        max_retries_filter = 3
-        current_retry_filter = 0
-        while current_retry_filter < max_retries_filter:
-            try:
-                milestone_filter_arg = repo.get_milestone(milestone_id)
-                print(f"DEBUG: Successfully retrieved milestone for duplicate check with ID {milestone_id}.")
-                break
-            except GithubException as e:
-                if e.status == 404:
-                    print(f"Warning: Milestone ID {milestone_id} not found yet for duplicate check (retry {current_retry_filter + 1}/{max_retries_filter}). Retrying in {current_retry_filter + 1} seconds...")
-                    time.sleep(current_retry_filter + 1)
-                    current_retry_filter += 1
-                else:
-                    print(f"Warning: Could not retrieve milestone with ID {milestone_id} for issue '{title}' in {repo.full_name} for duplicate check: {e}. Proceeding without milestone filter for duplicate check.")
-                    milestone_filter_arg = 'none'
-                    break
-            except Exception as e:
-                print(f"An unexpected error occurred while retrieving milestone for duplicate check: {e}. Proceeding without milestone filter for duplicate check.")
-                milestone_filter_arg = 'none'
-                break
-        else:
-            print(f"Warning: All retries failed for milestone ID {milestone_id} in duplicate check. Proceeding without milestone filter.")
-            milestone_filter_arg = 'none'
-    else:
-        milestone_filter_arg = 'none'
+    # ここでは、milestone_obj_for_issueがMilestoneオブジェクトであればそれを使用
+    milestone_filter_arg = milestone_obj_for_issue if isinstance(milestone_obj_for_issue, Milestone) else 'none'
 
 
     # 既存のIssueを検索 (簡易的な重複チェック)
@@ -201,33 +174,10 @@ def create_github_issue(repo, issue_data: dict, milestone_id: int):
         description_or_notset = description
 
     # Issue作成時に渡すマイルストーンオブジェクトを決定
-    milestone_obj_for_creation = GithubObject.NotSet # デフォルト値としてNotSetを設定
-    if milestone_id:
-        max_retries_creation = 5
-        current_retry_creation = 0
-        while current_retry_creation < max_retries_creation:
-            try:
-                milestone_obj_for_creation = repo.get_milestone(milestone_id)
-                print(f"DEBUG: Retrieved milestone object for ID {milestone_id} for repo {repo.full_name}: {milestone_obj_for_creation}")
-                break # Successfully retrieved, exit retry loop
-            except GithubException as e:
-                if e.status == 404:
-                    print(f"Warning: Milestone ID {milestone_id} not found yet (retry {current_retry_creation + 1}/{max_retries_creation}). Retrying in {current_retry_creation + 1} seconds...")
-                    time.sleep(current_retry_creation + 1) # Linear backoff
-                    current_retry_creation += 1
-                else:
-                    print(f"Error: Could not retrieve milestone with ID {milestone_id} for issue creation '{title}' in {repo.full_name}: {e}. Issue will be created without milestone.")
-                    milestone_obj_for_creation = GithubObject.NotSet
-                    break # Break on non-404 error
-            except Exception as e:
-                print(f"An unexpected error occurred while retrieving milestone: {e}. Issue will be created without milestone.")
-                milestone_obj_for_creation = GithubObject.NotSet
-                break # Break on unexpected error
-        else: # This block executes if the loop finishes without a 'break' (i.e., all retries failed)
-            print(f"Warning: All retries failed for milestone ID {milestone_id}. Issue will be created without milestone.")
-            milestone_obj_for_creation = GithubObject.NotSet
+    # ここでは直接受け取ったmilestone_obj_for_issueを使用し、再取得はしない
+    milestone_obj_for_creation = milestone_obj_for_issue if isinstance(milestone_obj_for_issue, Milestone) else GithubObject.NotSet
 
-    print(f"DEBUG: Creating issue '{title}' with milestone_id: {milestone_id} and milestone_obj: {milestone_obj_for_creation}")
+    print(f"DEBUG: Creating issue '{title}' with milestone_obj: {milestone_obj_for_creation}")
 
     try:
         issue = repo.create_issue(
@@ -355,24 +305,24 @@ def main():
       - `name`: マイルストーンのタイトル (文字列, 必須)
       - `description`: マイルストーンの説明 (文字列, オプション)
       - `target_repositories`: このマイルストーンが関連するリポジリのリスト (例: `["frontend", "backend"]`, **必ず1つ以上のリポジリを含めてください**)
-      - `due_on`: マイルストーンの期限 (YYYY-MM-DD形式の文字列, オプション)
+      - `due_on`: マイルストーンの期限 (YYYY-MM-DD形式の文字列, オプション, ただし、2025-06-13 ~ 2025-06-22の10-DAYハッカソンとする。 )
 
     - **タスク**は以下のフィールドを持つものとします。
       - `title`: Issueのタイトル (文字列, 必須)
       - `description`: Issueの説明 (文字列, オプション)。**タスクの完了条件や影響範囲など、具体的で実行可能な内容を記述してください。**
       - `target_repository`: このタスクが属するリポジリ ('frontend' または 'backend')
       - `assignee_candidate`: 担当者候補 ('frontend' または 'backend')
-      - `priority`: タスクの優先順位 ('high', 'medium', 'low' のいずれか, オプション)
+      - `priority`: タスクの優先順位 ('HIGH', 'MEDIUM', 'LOW' のいずれか, オプション)
       - `milestone_name`: このタスクを紐付けるマイルストーンの`name` (文字列, **マイルストーンに紐づく場合は必ずそのマイルストーンの`name`と完全に一致させ、紐づかない場合は空文字列 `""` を指定してください**)
-      - `task_granularity`: タスクの粒度 ('small' (2-4時間), 'medium' (1日-数日), 'large' (複数の詳細タスク))
+      - `status`: タスクの進行状況 ('Todo' (デフォルト))
 
     **要求事項:**
     - マイルストーンを生成する場合、**必ずそのマイルストーンに関連する具体的なタスク（Issue）を複数生成してください。**
-    - タスクは、マイルストーンに紐づかない独立したものでも構いません。
+    - タスクのみを生成する場合は、マイルストーンに紐づかない独立したものでも構いません。
     - 生成するJSONは、指定されたフォーマットに厳密に従ってください。
     - **マイルストーンに関連するタスクには、必ず該当するマイルストーンの`name`を`milestone_name`フィールドに正確に記述してください。**
 
-    **JSONフォーマット例:**
+    **JSONフォーマット作成例:**
     ```json
     {{
       "milestones": [
@@ -391,7 +341,7 @@ def main():
           "assignee_candidate": "backend",
           "priority": "high",
           "milestone_name": "GitHub OAuth 実装完了",
-          "task_granularity": "medium"
+          "status": "Todo"
         }},
         {{
           "title": "フロントエンド: ログインUIと認証フロー実装",
@@ -400,7 +350,7 @@ def main():
           "assignee_candidate": "frontend",
           "priority": "high",
           "milestone_name": "GitHub OAuth 実装完了",
-          "task_granularity": "medium"
+          "status": "Todo"
         }},
         {{
           "title": "READMEを整備",
@@ -409,7 +359,7 @@ def main():
           "assignee_candidate": "frontend",
           "priority": "medium",
           "milestone_name": "",
-          "task_granularity": "small"
+          "status": "Todo"
         }},
         {{
           "title": "バックエンド: 草データ取得API実装",
@@ -418,7 +368,7 @@ def main():
           "assignee_candidate": "backend",
           "priority": "medium",
           "milestone_name": "",
-          "task_granularity": "large"
+          "status": "Todo"
         }}
       ]
     }}
@@ -435,7 +385,9 @@ def main():
     tasks_data = llm_output.get('tasks', [])
 
     # 4. マイルストーンの作成/取得 (リポジリごとにIDを保持)
-    created_milestone_ids = {}
+    # ここではIDではなく、Milestoneオブジェクトそのものを格納する
+    # { "milestone_name": { "frontend": Milestone_Object, "backend": Milestone_Object } }
+    created_milestone_objects = {}
 
     for m_data in milestones_data:
         m_name = m_data.get('name')
@@ -443,7 +395,7 @@ def main():
             print("Warning: Skipping milestone creation due to missing name in LLM output.")
             continue
 
-        created_milestone_ids[m_name] = {}
+        created_milestone_objects[m_name] = {}
         target_repos_for_milestone = m_data.get('target_repositories', [])
 
         print(f"DEBUG: Milestone '{m_name}' target repositories: {target_repos_for_milestone}")
@@ -451,16 +403,17 @@ def main():
         for repo_key in target_repos_for_milestone:
             target_repo_obj = REPO_MAP.get(repo_key)
             if target_repo_obj:
-                milestone_id = get_or_create_milestone(target_repo_obj, m_data)
-                if milestone_id:
-                    created_milestone_ids[m_name][repo_key] = milestone_id
-                    print(f"DEBUG: Stored milestone ID {milestone_id} for '{m_name}' in '{repo_key}'.")
+                # Milestoneオブジェクトを受け取る
+                milestone_obj = get_or_create_milestone(target_repo_obj, m_data)
+                if milestone_obj:
+                    created_milestone_objects[m_name][repo_key] = milestone_obj
+                    print(f"DEBUG: Stored milestone object for '{m_name}' in '{repo_key}'. ID: {milestone_obj.id}")
                 else:
                     print(f"Warning: Failed to get/create milestone '{m_name}' in {repo_key}. Associated issues might not be linked.")
             else:
                 print(f"Warning: Unknown target repository '{repo_key}' for milestone '{m_name}'. Skipping.")
 
-    print(f"DEBUG: Final created_milestone_ids: {created_milestone_ids}")
+    print(f"DEBUG: Final created_milestone_objects: {created_milestone_objects}")
 
     # 5. タスク (Issue) の作成と紐付け
     for task_data in tasks_data:
@@ -477,13 +430,13 @@ def main():
             print(f"Warning: Unknown target repository '{task_repo_key}' for task '{task_title}'. Skipping.")
             continue
 
-        # 該当するマイルストーンIDを取得
-        milestone_for_issue_id = None
-        if task_milestone_name and task_milestone_name in created_milestone_ids:
-            milestone_for_issue_id = created_milestone_ids[task_milestone_name].get(task_repo_key)
+        # 該当するマイルストーンオブジェクトを取得
+        milestone_obj_for_issue = None
+        if task_milestone_name and task_milestone_name in created_milestone_objects:
+            milestone_obj_for_issue = created_milestone_objects[task_milestone_name].get(task_repo_key)
 
-        # Issueを作成
-        created_issue = create_github_issue(target_repo_obj, task_data, milestone_for_issue_id)
+        # Issueを作成（直接Milestoneオブジェクトを渡す）
+        created_issue = create_github_issue(target_repo_obj, task_data, milestone_obj_for_issue)
 
         # Issueが正常に作成された場合、GitHub Projectに追加
         if created_issue:

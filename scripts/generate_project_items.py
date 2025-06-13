@@ -7,6 +7,7 @@ from github.Milestone import Milestone # Milestoneクラスを明示的にイン
 import subprocess
 from datetime import datetime, timedelta
 import time # timeモジュールをインポート
+from typing import Optional # Optionalをインポート
 
 # --- 環境変数の読み込み ---
 # GitHub Actionsから渡される環境変数
@@ -78,7 +79,7 @@ def call_gemini_api(prompt_text: str) -> dict:
 # --- GitHub操作関数 ---
 
 # 戻り値をintからMilestoneオブジェクトに変更
-def get_or_create_milestone(repo, milestone_data: dict) -> 'Milestone' | None:
+def get_or_create_milestone(repo, milestone_data: dict) -> Optional['Milestone']: # ここを修正しました
     """
     指定されたリポジリにマイルストーンが存在するか確認し、なければ作成する。
     """
@@ -126,7 +127,7 @@ def get_or_create_milestone(repo, milestone_data: dict) -> 'Milestone' | None:
         return None
 
 # milestone_idの代わりにmilestone_obj_for_issueを受け取るように変更
-def create_github_issue(repo, issue_data: dict, milestone_obj_for_issue: 'Milestone' | None):
+def create_github_issue(repo, issue_data: dict, milestone_obj_for_issue: Optional['Milestone']): # ここを修正しました
     """
     指定されたリポジリにIssueを作成し、マイルストーンやラベルを紐付ける。
     """
@@ -134,7 +135,7 @@ def create_github_issue(repo, issue_data: dict, milestone_obj_for_issue: 'Milest
     description = issue_data.get('description', '')
     assignee_candidate = issue_data.get('assignee_candidate', 'unassigned')
     priority = issue_data.get('priority')
-    status = issue_data.get('status') # タスク粒度も取得
+    task_granularity = issue_data.get('task_granularity') # タスク粒度も取得
 
     if not title:
         print("Warning: Issue title is missing. Skipping issue creation.")
@@ -146,8 +147,8 @@ def create_github_issue(repo, issue_data: dict, milestone_obj_for_issue: 'Milest
         labels_to_add.append(assignee_candidate) # ロール名をラベルとして追加
     if priority:
         labels_to_add.append(f"priority:{priority}") # 優先順位をラベルとして追加 (例: "priority:high")
-    if status: # タスク粒度もラベルとして追加
-        labels_to_add.append(f"granularity:{status}")
+    if task_granularity: # タスク粒度もラベルとして追加
+        labels_to_add.append(f"granularity:{task_granularity}")
 
 
     # 既存のIssueを検索するためのマイルストーン引数を決定
@@ -318,11 +319,11 @@ def main():
 
     **要求事項:**
     - マイルストーンを生成する場合、**必ずそのマイルストーンに関連する具体的なタスク（Issue）を複数生成してください。**
-    - タスクのみを生成する場合は、マイルストーンに紐づかない独立したものでも構いません。
+    - タスクは、マイルストーンに紐づかない独立したものでも構いません。
     - 生成するJSONは、指定されたフォーマットに厳密に従ってください。
     - **マイルストーンに関連するタスクには、必ず該当するマイルストーンの`name`を`milestone_name`フィールドに正確に記述してください。**
 
-    **JSONフォーマット作成例:**
+    **JSONフォーマット例:**
     ```json
     {{
       "milestones": [

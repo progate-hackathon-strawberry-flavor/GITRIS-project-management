@@ -2,8 +2,8 @@ import os
 import json
 import sys
 import requests
-from github import Github, GithubException, GithubObject 
-from github.Issue import Issue 
+from github import Github, GithubException, GithubObject
+from github.Issue import Issue
 import subprocess
 from datetime import datetime, timedelta
 
@@ -27,7 +27,7 @@ try:
     org = g.get_organization(GITHUB_ORG_NAME)
     frontend_repo = org.get_repo(FRONTEND_REPO_NAME)
     backend_repo = org.get_repo(BACKEND_REPO_NAME)
-    
+
     # ターゲットリポジトリのマッピング
     REPO_MAP = {
         "frontend": frontend_repo,
@@ -55,9 +55,9 @@ def call_gemini_api(prompt_text: str) -> dict:
     try:
         response = requests.post(api_url, headers=headers, json=payload, timeout=300) # タイムアウトを長めに設定
         response.raise_for_status() # HTTPエラーをチェック (4xx, 5xx)
-        
+
         result = response.json()
-        
+
         # LLMの出力はJSON文字列として返されるため、それをパース
         generated_json_string = result['candidates'][0]['content']['parts'][0]['text']
         print(f"Raw LLM Response JSON String: {generated_json_string}")
@@ -81,10 +81,14 @@ def get_or_create_milestone(repo, milestone_data: dict) -> int:
     指定されたリポジトリにマイルストーンが存在するか確認し、なければ作成する。
     """
     milestone_name = milestone_data.get('name')
-    milestone_description = milestone_data.get('description', '')
+    milestone_description = milestone_data.get('description') # descriptionをそのまま取得
     milestone_due_on = milestone_data.get('due_on')
 
-    print(f"DEBUG: Attempting to get/create milestone. Name: '{milestone_name}', Due_on: '{milestone_due_on}' for repo: {repo.full_name}") # 追加
+    # descriptionがNoneの場合、空文字列に変換してAssertionErrorを回避
+    if milestone_description is None:
+        milestone_description = ""
+
+    print(f"DEBUG: Attempting to get/create milestone. Name: '{milestone_name}', Due_on: '{milestone_due_on}' for repo: {repo.full_name}")
 
     if not milestone_name:
         print("Warning: Milestone name is missing. Skipping milestone creation.")
@@ -100,14 +104,14 @@ def get_or_create_milestone(repo, milestone_data: dict) -> int:
 
     # マイルストーンが存在しない場合、新規作成
     print(f"Creating new milestone '{milestone_name}' in {repo.full_name}...")
-    
+
     # due_onの日付をdatetimeオブジェクトに変換
     # ここを修正: milestone_due_on が None の場合、GithubObject.NotSet を渡す
     due_on_dt_or_notset = GithubObject.NotSet
     if milestone_due_on:
         try:
             due_on_dt_or_notset = datetime.strptime(milestone_due_on, "%Y-%m-%d")
-            print(f"DEBUG: Parsed due_on date: {due_on_dt_or_notset}") # 追加
+            print(f"DEBUG: Parsed due_on date: {due_on_dt_or_notset}")
         except ValueError:
             print(f"Warning: Invalid date format for milestone '{milestone_name}' due_on: {milestone_due_on}. Skipping due_on.")
             # エラーの場合も NotSet のままにする
@@ -116,7 +120,7 @@ def get_or_create_milestone(repo, milestone_data: dict) -> int:
     try:
         new_milestone = repo.create_milestone(
             title=milestone_name,
-            description=milestone_description,
+            description=milestone_description, # ここがNoneにならないように修正
             due_on=due_on_dt_or_notset # GithubObject.NotSet または datetime オブジェクトを渡す
         )
         print(f"Successfully created milestone '{milestone_name}' in {repo.full_name} (ID: {new_milestone.id}).")
@@ -158,7 +162,7 @@ def create_github_issue(repo, issue_data: dict, milestone_id: int):
         except GithubException as e:
             print(f"Warning: Could not retrieve milestone with ID {milestone_id} for issue '{title}' in {repo.full_name} for duplicate check: {e}. Proceeding without milestone filter for duplicate check.")
             # マイルストーンが見つからなかった場合、重複チェックではマイルストーンなしとして扱う
-            milestone_filter_arg = 'none' 
+            milestone_filter_arg = 'none'
     else:
         # milestone_id がNoneの場合、明示的にマイルストーンがないIssueを検索
         milestone_filter_arg = 'none'
@@ -176,7 +180,7 @@ def create_github_issue(repo, issue_data: dict, milestone_id: int):
             return
 
     print(f"Creating issue '{title}' in {repo.full_name}...")
-    
+
     # Issue説明を決定: description が None または空文字列の場合、GithubObject.NotSet を渡す
     description_or_notset = GithubObject.NotSet
     if description: # description が None でなく、かつ空文字列でもない場合
@@ -190,7 +194,7 @@ def create_github_issue(repo, issue_data: dict, milestone_id: int):
         except GithubException as e:
             print(f"Warning: Could not retrieve milestone with ID {milestone_id} for issue creation '{title}' in {repo.full_name}: {e}. Issue will be created without milestone.")
             milestone_obj_for_creation = GithubObject.NotSet # 取得に失敗した場合も NotSet に戻す
-        
+
     try:
         issue = repo.create_issue(
             title=title,
@@ -217,10 +221,10 @@ def add_issue_to_github_project(org_name: str, project_name: str, issue_obj: Iss
             '--owner', org_name,
             '--format', 'json'
         ]
-        
+
         print(f"DEBUG: Running gh project list command: {' '.join(list_cmd)}")
         list_result = subprocess.run(list_cmd, capture_output=True, text=True, check=True)
-        
+
         print(f"DEBUG: gh project list stdout raw:\n{list_result.stdout}")
         if list_result.stderr:
             print(f"DEBUG: gh project list stderr raw:\n{list_result.stderr}")
@@ -235,11 +239,11 @@ def add_issue_to_github_project(org_name: str, project_name: str, issue_obj: Iss
             print(f"Error: Failed to parse JSON from 'gh project list' stdout: {e}")
             print(f"  Problematic stdout content: {list_result.stdout[:500]}...")
             sys.exit(1)
-        
-        project_target_id = None 
-        project_number = None    
 
-        all_projects = raw_projects_output.get('projects', []) 
+        project_target_id = None
+        project_number = None
+
+        all_projects = raw_projects_output.get('projects', [])
 
         if not isinstance(all_projects, list):
             print(f"Error: Expected 'projects' key in JSON output from 'gh project list' to be a list, but got: {type(all_projects)}. Full output:\n{list_result.stdout}")
@@ -255,10 +259,10 @@ def add_issue_to_github_project(org_name: str, project_name: str, issue_obj: Iss
             owner_login = p.get('owner', {}).get('login')
             if owner_login == org_name and p.get('title') == project_name:
                 project_target_id = p.get('id')
-                project_number = p.get('number') 
+                project_number = p.get('number')
                 break
 
-        if not project_target_id or not project_number: 
+        if not project_target_id or not project_number:
             print(f"Error: GitHub Project '{project_name}' not found for owner '{org_name}'. Please ensure the project exists and the PAT has sufficient permissions to list it.")
             print(f"Hint: You can check existing projects by running: gh project list --owner {org_name} --web")
             sys.exit(1)
@@ -272,7 +276,7 @@ def add_issue_to_github_project(org_name: str, project_name: str, issue_obj: Iss
             '--url', issue_obj.html_url, # Issue URLを --url フラグで渡す
             '--owner', org_name # --owner フラグをここに追加
         ]
-        
+
         print(f"DEBUG: Running gh project item-add command: {' '.join(cmd)}")
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
         print(f"DEBUG: gh project item-add stdout:\n{result.stdout}")
@@ -402,7 +406,7 @@ def main():
 
         created_milestone_ids[m_name] = {}
         target_repos_for_milestone = m_data.get('target_repositories', [])
-        
+
         # DEBUG: Add this print to see what target_repos_for_milestone contains
         print(f"DEBUG: Milestone '{m_name}' target repositories: {target_repos_for_milestone}")
 
@@ -412,7 +416,7 @@ def main():
                 milestone_id = get_or_create_milestone(target_repo_obj, m_data)
                 if milestone_id:
                     created_milestone_ids[m_name][repo_key] = milestone_id
-                    print(f"DEBUG: Stored milestone ID {milestone_id} for '{m_name}' in '{repo_key}'.") # 追加
+                    print(f"DEBUG: Stored milestone ID {milestone_id} for '{m_name}' in '{repo_key}'.")
                 else:
                     print(f"Warning: Failed to get/create milestone '{m_name}' in {repo_key}. Associated issues might not be linked.")
             else:
@@ -435,12 +439,12 @@ def main():
         if not target_repo_obj:
             print(f"Warning: Unknown target repository '{task_repo_key}' for task '{task_title}'. Skipping.")
             continue
-        
+
         # 該当するマイルストーンIDを取得
         milestone_for_issue_id = None
         if task_milestone_name and task_milestone_name in created_milestone_ids:
             milestone_for_issue_id = created_milestone_ids[task_milestone_name].get(task_repo_key)
-        
+
         # Issueを作成
         created_issue = create_github_issue(target_repo_obj, task_data, milestone_for_issue_id)
 
@@ -454,7 +458,4 @@ def main():
         else:
             print(f"Warning: Issue '{task_title}' was not created or found. Skipping Project linking.")
 
-    print("\nAI-powered project item generation complete!")
-
-if __name__ == "__main__":
-    main()
+    pr

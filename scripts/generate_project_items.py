@@ -4,6 +4,7 @@ import json
 import sys
 import requests
 from github import Github, GithubException, GithubObject 
+from github.Issue import Issue # ★github.Issue.Issue をインポート ★
 import subprocess
 from datetime import datetime, timedelta
 
@@ -195,11 +196,11 @@ def create_github_issue(repo, issue_data: dict, milestone_id: int):
         print(f"Error creating issue '{title}' in {repo.full_name}: {e}")
         return None
 
-def add_issue_to_github_project(org_name: str, project_name: str, issue_number: int, repo_full_name: str):
+def add_issue_to_github_project(org_name: str, project_name: str, issue_obj: Issue): # ★引数をIssueオブジェクトに変更★
     """
     gh CLI を使用してIssueをGitHub Projectに追加する。
     """
-    print(f"Adding issue #{issue_number} from {repo_full_name} to GitHub Project '{project_name}'...")
+    print(f"Adding issue #{issue_obj.number} from {issue_obj.repository.full_name} to GitHub Project '{project_name}'...") # ★ログメッセージも変更★
     try:
         # Step 1: プロジェクトIDを取得する
         # gh project list --owner <org_name> --format json
@@ -209,16 +210,13 @@ def add_issue_to_github_project(org_name: str, project_name: str, issue_number: 
             '--format', 'json'
         ]
         
-        # デバッグ: コマンドと出力をログに出力
         print(f"DEBUG: Running gh project list command: {' '.join(list_cmd)}")
         list_result = subprocess.run(list_cmd, capture_output=True, text=True, check=True)
         
-        # DEBUG: stdoutとstderrをそのまま出力
         print(f"DEBUG: gh project list stdout raw:\n{list_result.stdout}")
         if list_result.stderr:
             print(f"DEBUG: gh project list stderr raw:\n{list_result.stderr}")
 
-        # JSONパースの前に、JSON出力が空でないことを確認
         if not list_result.stdout.strip():
             print(f"Error: 'gh project list' returned empty stdout. No projects found or command output issue.")
             sys.exit(1)
@@ -227,12 +225,10 @@ def add_issue_to_github_project(org_name: str, project_name: str, issue_number: 
             raw_projects_output = json.loads(list_result.stdout)
         except json.JSONDecodeError as e:
             print(f"Error: Failed to parse JSON from 'gh project list' stdout: {e}")
-            print(f"  Problematic stdout content: {list_result.stdout[:500]}...") # エラー箇所の先頭500文字を出力
+            print(f"  Problematic stdout content: {list_result.stdout[:500]}...")
             sys.exit(1)
         
         project_id = None
-        # all_projectsがリストであることを確認し、各要素が辞書であることを期待する
-        # ★ここを修正: JSON出力のトップレベルが辞書であることを考慮し、'projects'キーからリストを取得★
         all_projects = raw_projects_output.get('projects', []) 
 
         if not isinstance(all_projects, list):
@@ -240,10 +236,8 @@ def add_issue_to_github_project(org_name: str, project_name: str, issue_number: 
             sys.exit(1)
 
         for p in all_projects:
-            # デバッグ: 各プロジェクトオブジェクトの内容を出力
             print(f"DEBUG: Processing project object: {p}")
 
-            # 'str' object has no attribute 'get' エラー対策
             if not isinstance(p, dict):
                 print(f"Error: Expected project item to be a dictionary, but got {type(p)}. Content: {p}")
                 sys.exit(1)
@@ -261,21 +255,19 @@ def add_issue_to_github_project(org_name: str, project_name: str, issue_number: 
         print(f"Found Project '{project_name}' with ID: {project_id}")
 
         # Step 2: Issueをプロジェクトに追加する
-        # gh project item add <project-id> --issue <issue-number> --repo <repo-full-name>
+        # gh project item add <project-id> <issue-url>
         cmd = [
             'gh', 'project', 'item', 'add', project_id, # プロジェクトIDを直接渡す
-            '--issue', str(issue_number),
-            '--repo', repo_full_name # Issueが属するリポジリポトリのフルネーム
+            issue_obj.html_url # ★IssueのURLを直接渡す★
         ]
         
-        # デバッグ: コマンドと出力をログに出力
         print(f"DEBUG: Running gh project item add command: {' '.join(cmd)}")
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
         print(f"DEBUG: gh project item add stdout:\n{result.stdout}")
         if result.stderr:
             print(f"DEBUG: gh project item add stderr:\n{result.stderr}")
 
-        print(f"Successfully added issue #{issue_number} to Project '{project_name}'.")
+        print(f"Successfully added issue #{issue_obj.number} to Project '{project_name}'.")
     except subprocess.CalledProcessError as e:
         print(f"Error adding issue to GitHub Project: {e}")
         print(f"stdout: {e.stdout}")
@@ -438,8 +430,7 @@ def main():
             add_issue_to_github_project(
                 GITHUB_ORG_NAME,
                 GITHUB_PROJECT_NAME,
-                created_issue.number,
-                created_issue.repository.full_name # Issueが作成されたリポジリポトリのフルネーム
+                created_issue # ★ここをIssueオブジェクト全体に変更★
             )
         else:
             print(f"Warning: Issue '{task_title}' was not created or found. Skipping Project linking.")

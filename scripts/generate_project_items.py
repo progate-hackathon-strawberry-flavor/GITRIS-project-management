@@ -126,36 +126,68 @@ def create_github_issue(repo, issue_data: dict, milestone_id: int):
     title = issue_data.get('title')
     description = issue_data.get('description', '')
     assignee_candidate = issue_data.get('assignee_candidate', 'unassigned')
-    priority = issue_data.get('priority') # 新しく追加された優先順位
+    priority = issue_data.get('priority')
+    task_granularity = issue_data.get('task_granularity') # タスク粒度も取得
 
     if not title:
         print("Warning: Issue title is missing. Skipping issue creation.")
         return
 
-    # 既存のIssueを検索 (簡易的な重複チェック)
-    # 同じタイトルで開いているIssueがあればスキップ
-    existing_issues = repo.get_issues(state='open', labels=[assignee_candidate] if assignee_candidate != 'unassigned' else [], milestone=repo.get_milestone(milestone_id) if milestone_id else None)
-    for issue in existing_issues:
-        if issue.title == title:
-            print(f"Issue '{title}' already exists in {repo.full_name} (ID: {issue.id}). Skipping creation.")
-            return
-
+    # Issueに付与するラベルを準備
     labels_to_add = []
     if assignee_candidate != 'unassigned':
         labels_to_add.append(assignee_candidate) # ロール名をラベルとして追加
     if priority:
         labels_to_add.append(f"priority:{priority}") # 優先順位をラベルとして追加 (例: "priority:high")
+    if task_granularity: # タスク粒度もラベルとして追加
+        labels_to_add.append(f"granularity:{task_granularity}")
+
+
+    # 既存のIssueを検索するためのマイルストーン引数を決定
+    # PyGithubのget_issuesは、マイルストーンがない場合に文字列'none'を期待する
+    milestone_filter_arg = None
+    if milestone_id:
+        try:
+            milestone_filter_arg = repo.get_milestone(milestone_id)
+        except GithubException as e:
+            print(f"Warning: Could not retrieve milestone with ID {milestone_id} for issue '{title}' in {repo.full_name} for duplicate check: {e}. Proceeding without milestone filter for duplicate check.")
+            # マイルストーンが見つからなかった場合、重複チェックではマイルストーンなしとして扱う
+            milestone_filter_arg = 'none' 
+    else:
+        # milestone_id がNoneの場合、明示的にマイルストーンがないIssueを検索
+        milestone_filter_arg = 'none'
+
+
+    # 既存のIssueを検索 (簡易的な重複チェック)
+    existing_issues = repo.get_issues(
+        state='open',
+        labels=labels_to_add, # 検索時にラベルも考慮
+        milestone=milestone_filter_arg # 正しくフォーマットされたマイルストーンフィルターを渡す
+    )
+    for issue in existing_issues:
+        if issue.title == title:
+            print(f"Issue '{title}' already exists in {repo.full_name} (ID: {issue.id}). Skipping creation.")
+            return
 
     print(f"Creating issue '{title}' in {repo.full_name}...")
+    
+    # Issue作成時にマイルストーンオブジェクトを渡す
+    milestone_obj_for_creation = None
+    if milestone_id:
+        try:
+            milestone_obj_for_creation = repo.get_milestone(milestone_id)
+        except GithubException as e:
+            print(f"Warning: Could not retrieve milestone with ID {milestone_id} for issue creation '{title}' in {repo.full_name}: {e}. Issue will be created without milestone.")
+        
     try:
         issue = repo.create_issue(
             title=title,
             body=description,
             labels=labels_to_add,
-            milestone=repo.get_milestone(milestone_id) if milestone_id else None # マイルストーンIDを指定
+            milestone=milestone_obj_for_creation # MilestoneオブジェクトまたはNoneを渡す
         )
         print(f"Successfully created issue '{title}' in {repo.full_name} (Issue #{issue.number}).")
-        return issue # 後のProject連携のためにIssueオブジェクトを返す
+        return issue
     except GithubException as e:
         print(f"Error creating issue '{title}' in {repo.full_name}: {e}")
         return None
@@ -208,6 +240,7 @@ def main():
         sys.exit(1)
 
     # 2. LLMへのプロンプト作成
+    # プロンプトの例を修正し、`milestone_name` が空文字列の場合の挙動を明確化
     prompt = f"""
     以下の要件定義ドキュメントから、主要なマイルストーン（目標）と、それに付随する詳細なタスク（Issue）をJSON形式で抽出してください。
 
@@ -223,7 +256,7 @@ def main():
       - `target_repository`: このタスクが属するリポジトリ ('frontend' または 'backend')
       - `assignee_candidate`: 担当者候補 ('frontend' または 'backend')
       - `priority`: タスクの優先順位 ('high', 'medium', 'low' のいずれか, オプション)
-      - `milestone_name`: このタスクを紐付けるマイルストーンの`name` (文字列, マイルストーンがなければ空文字列)
+      - `milestone_name`: このタスクを紐付けるマイルストーンの`name` (文字列, マイルストーンがなければ空文字列 `""`)
       - `task_granularity`: タスクの粒度 ('small' (2-4時間), 'medium' (1日-数日), 'large' (複数の詳細タスク))
 
     **JSONフォーマット例:**
@@ -255,6 +288,15 @@ def main():
           "priority": "high",
           "milestone_name": "GitHub OAuth 実装完了",
           "task_granularity": "medium"
+        }},
+        {{
+          "title": "READMEを整備",
+          "description": "プロジェクトの基本的な情報、目的、コンセプトを記述する",
+          "target_repository": "frontend",
+          "assignee_candidate": "frontend",
+          "priority": "medium",
+          "milestone_name": "",
+          "task_granularity": "small"
         }},
         {{
           "title": "バックエンド: 草データ取得API実装",
